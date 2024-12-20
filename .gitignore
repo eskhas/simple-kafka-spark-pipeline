@@ -1,0 +1,5 @@
+*.txt
+daenv/
+checkpoints/
+scripts/__pycache__
+data/
