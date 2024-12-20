@@ -2,7 +2,7 @@ from pyspark.ml import Pipeline
 from pyspark.ml.feature import Tokenizer, StopWordsRemover, CountVectorizer
 from pyspark.ml.classification import LogisticRegression
 from pyspark.sql import SparkSession
-
+from pyspark.sql.functions import col
 def train_model():
     spark = SparkSession.builder \
         .appName(spark_config["app_name"] + "_Training") \
