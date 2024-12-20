@@ -3,3 +3,4 @@ daenv/
 checkpoints/
 scripts/__pycache__
 data/
+models/

@@ -1,9 +1,9 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import from_json, col
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType
-from pyspark.ml.feature import Tokenizer, StopWordsRemover, CountVectorizer
-from pyspark.ml.classification import LogisticRegression
-from pyspark.ml import Pipeline
+from pyspark.ml.feature import Tokenizer, StopWordsRemover,CountVectorizerModel
+from pyspark.ml.classification import LogisticRegressionModel
+from pyspark.ml import PipelineModel
 
 def preprocess_and_stream():
     spark = SparkSession.builder \
@@ -28,26 +28,32 @@ def preprocess_and_stream():
         .select(from_json(col("value"), schema).alias("data")) \
         .select("data.*")
 
-    # Preprocessing pipeline
+    # # Text preprocessing
     tokenizer = Tokenizer(inputCol="review", outputCol="words")
+    tokenized = tokenizer.transform(reviews_df)
+
     remover = StopWordsRemover(inputCol="words", outputCol="filtered")
-    vectorizer = CountVectorizer(inputCol="filtered", outputCol="features")
-    lr = LogisticRegression(featuresCol="features", labelCol="label")
+    filtered = remover.transform(tokenized)
 
-    pipeline = Pipeline(stages=[tokenizer, remover, vectorizer, lr])
+    # Load pre-trained CountVectorizer model
+    vectorizer_model = CountVectorizerModel.load("models/count_vectorizer_model")
+    features = vectorizer_model.transform(filtered)
 
-    # Transform the streaming data
-    model = pipeline.fit(reviews_df)
-    predictions = model.transform(reviews_df)
+    # Load pre-trained Logistic Regression model
+    pipeline_model = PipelineModel.load("models/sentiment_model")
 
+    # Extract the LogisticRegressionModel from the pipeline
+    model = pipeline_model.stages[-1] 
+    predictions = model.transform(features)
+
+    # Write predictions to console
     query = predictions.select("review", "label", "prediction").writeStream \
         .outputMode("append") \
         .format("console") \
-        .option("checkpointLocation", spark_config["checkpoint_dir"] + "/reviews") \
+        .option("checkpointLocation", "checkpoints/reviews") \
         .start()
 
     query.awaitTermination()
-
 if __name__ == "__main__":
     from kafka_config import kafka_config
     from spark_config import spark_config
