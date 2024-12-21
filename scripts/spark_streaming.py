@@ -1,11 +1,11 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import from_json, col
+from pyspark.sql.functions import from_json, col, udf
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType
-from pyspark.ml.feature import Tokenizer, StopWordsRemover,CountVectorizerModel
+from pyspark.ml.feature import CountVectorizerModel
 from pyspark.ml.classification import LogisticRegressionModel
-from pyspark.ml import PipelineModel
+import joblib
 
-def preprocess_and_stream():
+def start_stream():
     spark = SparkSession.builder \
         .appName(spark_config["app_name"]) \
         .master(spark_config["master"]) \
@@ -17,7 +17,17 @@ def preprocess_and_stream():
         StructField("label", IntegerType(), True)
     ])
 
-    # Read from Kafka
+    # Load pre-trained models
+    tv_vectorizer = joblib.load("models/tv_vectorizer.joblib")
+    lr_model = joblib.load("models/lr_tfidf_model.joblib")
+
+    @udf("double")
+    def predict_sentiment(review):
+        vectorized = tv_vectorizer.transform([review])
+        prediction = lr_model.predict(vectorized)
+        return float(prediction[0])
+
+    # Stream data from Kafka
     df = spark.readStream \
         .format("kafka") \
         .option("kafka.bootstrap.servers", kafka_config["bootstrap_servers"]) \
@@ -28,33 +38,18 @@ def preprocess_and_stream():
         .select(from_json(col("value"), schema).alias("data")) \
         .select("data.*")
 
-    # # Text preprocessing
-    tokenizer = Tokenizer(inputCol="review", outputCol="words")
-    tokenized = tokenizer.transform(reviews_df)
+    # Apply prediction
+    predictions_df = reviews_df.withColumn("prediction", predict_sentiment(col("review")))
 
-    remover = StopWordsRemover(inputCol="words", outputCol="filtered")
-    filtered = remover.transform(tokenized)
-
-    # Load pre-trained CountVectorizer model
-    vectorizer_model = CountVectorizerModel.load("models/count_vectorizer_model")
-    features = vectorizer_model.transform(filtered)
-
-    # Load pre-trained Logistic Regression model
-    pipeline_model = PipelineModel.load("models/sentiment_model")
-
-    # Extract the LogisticRegressionModel from the pipeline
-    model = pipeline_model.stages[-1] 
-    predictions = model.transform(features)
-
-    # Write predictions to console
-    query = predictions.select("review", "label", "prediction").writeStream \
+    query = predictions_df.writeStream \
         .outputMode("append") \
         .format("console") \
-        .option("checkpointLocation", "checkpoints/reviews") \
+        .option("checkpointLocation", spark_config["checkpoint_dir"] + "/predictions") \
         .start()
 
     query.awaitTermination()
+
 if __name__ == "__main__":
     from kafka_config import kafka_config
     from spark_config import spark_config
-    preprocess_and_stream()
+    start_stream()
