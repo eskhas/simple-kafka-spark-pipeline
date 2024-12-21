@@ -11,7 +11,7 @@ def produce_messages():
 
     # Load dataset from IMDB_Dataset.csv
     df = pd.read_csv("data/IMDB_Dataset.csv")
-
+    df = df[40000:]
     # Convert data to JSON format
     for _, row in df.iterrows():
         record = {"review": row["review"], "label": 1 if row["sentiment"] == "positive" else 0}
