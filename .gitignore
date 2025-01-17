@@ -4,3 +4,5 @@ checkpoints/
 scripts/__pycache__
 data/
 models/
+notebooks/
+config/
